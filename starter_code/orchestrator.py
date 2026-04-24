@@ -9,38 +9,63 @@ from quality_check import run_semantic_checks
 
 # ==========================================
 # ROLE 4: DEVOPS & INTEGRATION SPECIALIST
+# Wires together the ETL pipeline end-to-end:
+#   raw JSON files -> process -> quality gate -> knowledge base JSON
 # ==========================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "..", "raw_data")
-OUTPUT_FILE = os.path.join(BASE_DIR, "..", "processed_knowledge_base.json")
+OUTPUT_FILE  = os.path.join(BASE_DIR, "..", "processed_knowledge_base.json")
+
 
 def run_pipeline():
     final_kb = []
-    
-    # Xử lý Group A (PDFs)
+
+    # ── Group A: PDFs ──────────────────────────────────────────────────────────
     pdf_files = glob.glob(os.path.join(RAW_DATA_DIR, "group_a_pdfs", "*.json"))
+    print(f"[Pipeline] Found {len(pdf_files)} PDF file(s) to process.")
+
     for file_path in pdf_files:
-        with open(file_path, 'r') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             raw_data = json.load(f)
-        
-        # TODO: Bước 1: Gọi hàm xử lý PDF (process_pdf_data)
-        
-        # TODO: Bước 2: Kiểm tra chất lượng (run_semantic_checks). 
-        # Nếu đạt (True) thì thêm vào list final_kb
 
-    # Xử lý Group B (Videos)
+        # Bước 1: Gọi hàm xử lý PDF
+        processed = process_pdf_data(raw_data)
+
+        # Bước 2: Kiểm tra chất lượng — chỉ thêm nếu đạt
+        if run_semantic_checks(processed):
+            # Validate schema (raises ValidationError if fields are missing/wrong type)
+            doc = UnifiedDocument(**processed)
+            final_kb.append(doc.model_dump())
+            print(f"  [OK]  {os.path.basename(file_path)} -> {doc.document_id}")
+        else:
+            print(f"  [SKIP] {os.path.basename(file_path)} — failed quality gate")
+
+    # ── Group B: Videos ────────────────────────────────────────────────────────
     video_files = glob.glob(os.path.join(RAW_DATA_DIR, "group_b_videos", "*.json"))
-    for file_path in video_files:
-        with open(file_path, 'r') as f:
-            raw_data = json.load(f)
-        
-        # TODO: Làm tương tự như phần PDF (gọi hàm xử lý Video và kiểm tra chất lượng)
+    print(f"[Pipeline] Found {len(video_files)} Video file(s) to process.")
 
-    # Lưu kết quả
-    with open(OUTPUT_FILE, 'w') as f:
-        json.dump(final_kb, f, indent=4)
-        print(f"Pipeline finished! Saved {len(final_kb)} records.")
+    for file_path in video_files:
+        with open(file_path, "r", encoding="utf-8") as f:
+            raw_data = json.load(f)
+
+        # Gọi hàm xử lý Video
+        processed = process_video_data(raw_data)
+
+        # Kiểm tra chất lượng — chỉ thêm nếu đạt
+        if run_semantic_checks(processed):
+            doc = UnifiedDocument(**processed)
+            final_kb.append(doc.model_dump())
+            print(f"  [OK]  {os.path.basename(file_path)} -> {doc.document_id}")
+        else:
+            print(f"  [SKIP] {os.path.basename(file_path)} — failed quality gate")
+
+    # ── Lưu kết quả ────────────────────────────────────────────────────────────
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(final_kb, f, indent=4, ensure_ascii=False)
+
+    print(f"\n[Pipeline] Finished! Saved {len(final_kb)} record(s) -> {OUTPUT_FILE}")
+
 
 if __name__ == "__main__":
     run_pipeline()
